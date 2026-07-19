@@ -155,32 +155,6 @@ Correlation เพียงอย่างเดียวไม่เพีย�
 7. หา Top correlated pairs
 8. รัน `app.py` เพื่อดู Dashboard เต็มรูปแบบ
 
-## ไอเดียต่อยอด
-
-- Rolling Correlation เช่นย้อนหลัง 60 วัน
-- Correlation ก่อนและหลังเหตุการณ์สำคัญ
-- Hierarchical Clustering และ Clustered Heatmap
-- Minimum Variance Portfolio
-- Risk–Return Scatter Plot
-- Maximum Drawdown Matrix
-- Correlation แยก Bull Market และ Bear Market
-- เพิ่ม Asset Allocation Simulator
-
-## ไอเดียคอนเทนต์ TikTok
-
-**Hook**
-
-> ถือหุ้นหลายตัว ไม่ได้แปลว่ากระจายความเสี่ยง ถ้าทุกตัวขึ้นลงพร้อมกัน
-
-**โครงเรื่อง**
-
-1. เลือกหุ้น 10 ตัวในพอร์ต
-2. ดึงราคาย้อนหลัง
-3. เปลี่ยนราคาเป็น Return
-4. คำนวณ Correlation
-5. แสดง Heatmap
-6. ชี้คู่ที่เคลื่อนไหวคล้ายกันมากที่สุด
-7. ย้ำว่า Correlation เปลี่ยนได้ตามช่วงเวลา
 
 ## คำเตือน
 
