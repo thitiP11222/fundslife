@@ -27,6 +27,31 @@ class OptionScanConfig:
     top_n: int = 3
 
 
+def _latest_closed_hourly_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return data only through the most recent fully closed 1-hour candle.
+
+    Yahoo can include the currently forming hourly candle. Using it distorts
+    volume confirmation, so we exclude any bar whose one-hour window has not
+    finished yet. For naive timestamps, we conservatively drop the last row.
+    """
+    x = df.copy().sort_index()
+
+    if x.empty:
+        return x
+
+    last_ts = pd.Timestamp(x.index[-1])
+
+    if last_ts.tzinfo is None:
+        return x.iloc[:-1] if len(x) > 1 else x.iloc[0:0]
+
+    now = pd.Timestamp.now(tz=last_ts.tz)
+    if last_ts + pd.Timedelta(hours=1) > now:
+        return x.iloc[:-1]
+
+    return x
+
+
 def _momentum_score(close: pd.Series, fast: int, slow: int) -> float | None:
     if len(close) <= slow:
         return None
@@ -54,7 +79,14 @@ def _hourly_entry_snapshot(
     df: pd.DataFrame,
     cfg: OptionScanConfig,
 ) -> dict:
-    x = df.copy().sort_index()
+    x = _latest_closed_hourly_frame(df)
+
+    if x.empty:
+        return {
+            "ready": False,
+            "score": 0,
+            "reason": "NO_CLOSED_1H_CANDLE",
+        }
 
     x["EMA_FAST"] = ema(x["Close"], cfg.hourly_ema_fast)
     x["EMA_SLOW"] = ema(x["Close"], cfg.hourly_ema_slow)
@@ -89,6 +121,7 @@ def _hourly_entry_snapshot(
         return {
             "ready": False,
             "score": 0,
+            "closed_bar_time": str(x.index[-1]),
             "reason": "NOT_ENOUGH_DATA",
         }
 
@@ -104,10 +137,7 @@ def _hourly_entry_snapshot(
         else 0.0
     )
 
-    trend_ok = (
-        close > ema_fast_value
-        and ema_fast_value > ema_slow_value
-    )
+    trend_ok = close > ema_fast_value > ema_slow_value
     momentum_ok = cfg.min_rsi <= rsi_value <= cfg.max_rsi
     volume_ok = volume_ratio >= cfg.min_volume_ratio
     breakout_ok = close > breakout
@@ -119,16 +149,12 @@ def _hourly_entry_snapshot(
         + int(breakout_ok) * 25
     )
 
-    # Underlying trigger/invalidations. These are not option premium levels.
     trigger_price = breakout
     invalidation_price = ema_fast_value - atr_value
+    target_1 = trigger_price + atr_value
+    target_2 = trigger_price + 2.0 * atr_value
 
-    ready = (
-        trend_ok
-        and momentum_ok
-        and breakout_ok
-        and volume_ok
-    )
+    ready = trend_ok and momentum_ok and breakout_ok and volume_ok
 
     reasons = []
     if not trend_ok:
@@ -143,6 +169,7 @@ def _hourly_entry_snapshot(
     return {
         "ready": ready,
         "score": score,
+        "closed_bar_time": str(x.index[-1]),
         "close": close,
         "ema20": ema_fast_value,
         "ema50": ema_slow_value,
@@ -151,8 +178,43 @@ def _hourly_entry_snapshot(
         "volume_ratio": volume_ratio,
         "trigger_price": trigger_price,
         "invalidation_price": invalidation_price,
+        "target_1": target_1,
+        "target_2": target_2,
+        "trend_ok": trend_ok,
+        "momentum_ok": momentum_ok,
+        "volume_ok": volume_ok,
+        "breakout_ok": breakout_ok,
         "reason": "READY" if ready else ",".join(reasons),
     }
+
+
+def _grade_setup(row: pd.Series, top_n: int) -> str:
+    top_rank = int(row["momentum_rank"]) <= top_n
+
+    if (
+        top_rank
+        and bool(row["market_risk_on"])
+        and bool(row["daily_trend_ready"])
+        and bool(row["entry_ready"])
+    ):
+        return "A"
+
+    if (
+        top_rank
+        and bool(row["market_risk_on"])
+        and bool(row["daily_trend_ready"])
+        and int(row["entry_score"]) >= 60
+    ):
+        return "B"
+
+    if (
+        int(row["momentum_rank"]) <= 5
+        and bool(row["daily_trend_ready"])
+        and int(row["entry_score"]) >= 35
+    ):
+        return "C"
+
+    return "WAIT"
 
 
 def scan_option_candidates(
@@ -193,10 +255,7 @@ def scan_option_candidates(
             and float(daily_ema50.iloc[-1]) > float(daily_ema200.iloc[-1])
         )
 
-        hourly = _hourly_entry_snapshot(
-            hourly_data[symbol],
-            cfg,
-        )
+        hourly = _hourly_entry_snapshot(hourly_data[symbol], cfg)
 
         rows.append(
             {
@@ -205,11 +264,18 @@ def scan_option_candidates(
                 "daily_momentum_score": score,
                 "daily_trend_ready": trend_ready,
                 "entry_score": hourly.get("score", 0),
+                "closed_bar_time": hourly.get("closed_bar_time"),
                 "underlying_close": hourly.get("close"),
                 "entry_trigger": hourly.get("trigger_price"),
                 "invalidation": hourly.get("invalidation_price"),
+                "target_1": hourly.get("target_1"),
+                "target_2": hourly.get("target_2"),
                 "rsi_1h": hourly.get("rsi"),
                 "volume_ratio_1h": hourly.get("volume_ratio"),
+                "trend_1h_ok": hourly.get("trend_ok", False),
+                "rsi_1h_ok": hourly.get("momentum_ok", False),
+                "volume_1h_ok": hourly.get("volume_ok", False),
+                "breakout_1h_ok": hourly.get("breakout_ok", False),
                 "entry_reason": hourly.get("reason"),
                 "entry_ready": bool(hourly.get("ready", False)),
             }
@@ -225,18 +291,11 @@ def scan_option_candidates(
     ).reset_index(drop=True)
 
     result["momentum_rank"] = range(1, len(result) + 1)
-
-    result["option_signal"] = "WAIT"
-
-    tradable = (
-        result["market_risk_on"]
-        & result["daily_trend_ready"]
-        & result["entry_ready"]
-        & (result["momentum_rank"] <= cfg.top_n)
+    result["setup_grade"] = result.apply(
+        lambda row: _grade_setup(row, cfg.top_n),
+        axis=1,
     )
+    result["option_signal"] = "WAIT"
+    result.loc[result["setup_grade"] == "A", "option_signal"] = "CALL_CANDIDATE"
 
-    result.loc[tradable, "option_signal"] = "CALL_CANDIDATE"
-
-    # PUT is intentionally not emitted: the current research pipeline has not
-    # validated a bearish options strategy.
     return result
