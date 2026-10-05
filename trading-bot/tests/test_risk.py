@@ -21,3 +21,17 @@ def test_position_size_respects_notional_cap():
         max_position_value_pct=0.20,
     )
     assert shares == 10
+
+
+def test_fractional_position_size_for_small_account():
+    shares = position_size_from_risk(
+        equity=30,
+        risk_fraction=0.005,
+        entry_price=240,
+        stop_price=235,
+        max_position_value_pct=0.90,
+        allow_fractional=True,
+        share_step=0.001,
+    )
+    assert 0 < shares < 1
+    assert round(shares, 3) == shares
