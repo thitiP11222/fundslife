@@ -18,6 +18,9 @@ class StrategyConfig:
     volume_ma_period: int = 20
     volume_ratio_min: float = 1.0
 
+    use_market_regime: bool = False
+    rs_min: float = 0.0
+
     rsi_min: float = 50.0
     rsi_max: float = 70.0
 
