@@ -181,3 +181,42 @@ At minimum review:
 4. results not dependent on one parameter combination
 5. comparison against Buy & Hold
 6. performance across more than one liquid stock and market regime
+
+
+## Small-account profile: THB 1,000
+
+The default configuration is now designed for a very small US-stock account.
+
+Key changes:
+
+- timeframe: 1 hour instead of 15 minutes
+- breakout: 25 bars
+- ATR stop: 2.0 ATR
+- reward target: 2R
+- risk per trade: 0.5% of account equity
+- maximum capital in one position: 90%
+- fractional shares enabled
+- fractional step: 0.001 share
+- backtest cash: USD 30 as an approximate USD-equivalent research account
+
+Important: Yahoo Finance prices US stocks in USD, so the backtest account is also
+in USD. If your real budget is THB 1,000, convert the budget using the actual FX
+rate and broker conversion costs before comparing real-money results.
+
+A broker must support fractional shares for expensive stocks such as NVDA.
+Without fractional shares, a THB 1,000 account may not be able to buy even one
+whole share.
+
+The 0.5% risk setting is deliberately conservative. With a very small account,
+minimum commissions, FX conversion fees, spread, or broker minimum order sizes
+can dominate results. Update the cost assumptions to match the broker before
+paper trading.
+
+Run:
+
+```powershell
+git pull origin feat/stock-trading-bot-v1
+pytest -q
+python run_backtest.py
+python run_validation.py
+```
