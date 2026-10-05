@@ -252,12 +252,22 @@ def backtest_grade_a_signals(
             )
 
             invalidation = ema20 - atr_value
-            target_1 = breakout + atr_value
-            target_2 = breakout + 2.0 * atr_value
 
-            # Skip malformed signals where next-open gaps beyond T2 or below
-            # invalidation; these are not clean next-bar entries.
-            if entry <= invalidation or entry >= target_2:
+            # Targets must be anchored to the actual next-bar entry, not the
+            # earlier breakout trigger. Otherwise a gap-up entry can leave very
+            # little reward while still risking a full stop.
+            risk_per_share = entry - invalidation
+            if risk_per_share <= 0:
+                continue
+
+            target_1 = entry + risk_per_share
+            target_2 = entry + 2.0 * risk_per_share
+
+            # Reject excessive gap-up entries. If the next open is already more
+            # than 0.5 ATR above the breakout trigger, the setup is considered
+            # chased rather than a clean breakout entry.
+            max_entry = breakout + 0.5 * atr_value
+            if entry > max_entry:
                 continue
 
             outcome = "TIME_EXIT"
@@ -314,7 +324,6 @@ def backtest_grade_a_signals(
                 float(exit_price) / entry - 1
             ) * 100
 
-            risk_per_share = entry - invalidation
             r_multiple = (
                 (float(exit_price) - entry) / risk_per_share
                 if risk_per_share > 0
