@@ -9,16 +9,18 @@ from src.validation import (
 
 
 def _sample_df(n: int = 1000) -> pd.DataFrame:
-    close = pd.Series([100 + i * 0.05 for i in range(n)], dtype=float)
+    index = pd.date_range("2026-01-01", periods=n, freq="15min")
+    close = [100 + i * 0.05 for i in range(n)]
+
     return pd.DataFrame(
         {
-            "Open": close - 0.02,
-            "High": close + 0.20,
-            "Low": close - 0.20,
+            "Open": [value - 0.02 for value in close],
+            "High": [value + 0.20 for value in close],
+            "Low": [value - 0.20 for value in close],
             "Close": close,
             "Volume": [1000 + (i % 50) * 10 for i in range(n)],
         },
-        index=pd.date_range("2026-01-01", periods=n, freq="15min"),
+        index=index,
     )
 
 
