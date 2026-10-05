@@ -19,6 +19,7 @@ def backtest(
     cash = cfg.starting_cash
     position = None
     trades = []
+    equity_curve = [cfg.starting_cash]
 
     for i in range(1, len(data)):
         ts = data.index[i]
@@ -49,26 +50,71 @@ def backtest(
                     "entry_commission": entry * shares * cfg.commission_pct,
                 }
 
+        if position is not None:
+            open_price = float(row["Open"])
+            low = float(row["Low"])
+            high = float(row["High"])
+            raw_exit = None
+            exit_reason = None
+
+            # A stop order can gap through its trigger. In that case the first
+            # executable approximation is the opening price, not the stop level.
+            if open_price <= position["stop"]:
+                raw_exit = open_price
+                exit_reason = "STOP_GAP"
+            elif low <= position["stop"]:
+                raw_exit = position["stop"]
+                exit_reason = "STOP"
+            elif high >= position["target"]:
+                raw_exit = position["target"]
+                exit_reason = "TARGET"
+
+            if raw_exit is not None:
+                exit_price = float(raw_exit) * (1 - cfg.slippage_pct)
+                shares = int(position["shares"])
+                gross_pnl = (exit_price - position["entry"]) * shares
+                exit_commission = exit_price * shares * cfg.commission_pct
+                net_pnl = (
+                    gross_pnl
+                    - position["entry_commission"]
+                    - exit_commission
+                )
+                cash += net_pnl
+
+                trades.append(
+                    {
+                        "entry_time": position["entry_time"],
+                        "exit_time": ts,
+                        "shares": shares,
+                        "entry": position["entry"],
+                        "exit": exit_price,
+                        "stop": position["stop"],
+                        "target": position["target"],
+                        "exit_reason": exit_reason,
+                        "gross_pnl": gross_pnl,
+                        "net_pnl": net_pnl,
+                        "equity_after": cash,
+                    }
+                )
+                position = None
+
+        # Mark open positions to market on every candle so drawdown captures
+        # adverse movement before a trade is closed.
         if position is None:
-            continue
+            marked_equity = cash
+        else:
+            shares = int(position["shares"])
+            unrealized = (float(row["Close"]) - position["entry"]) * shares
+            marked_equity = cash + unrealized - position["entry_commission"]
 
-        low = float(row["Low"])
-        high = float(row["High"])
-        raw_exit = None
-        exit_reason = None
+        equity_curve.append(marked_equity)
 
-        # Conservative intrabar assumption: stop is checked before target.
-        if low <= position["stop"]:
-            raw_exit = position["stop"]
-            exit_reason = "STOP"
-        elif high >= position["target"]:
-            raw_exit = position["target"]
-            exit_reason = "TARGET"
-
-        if raw_exit is None:
-            continue
-
-        exit_price = float(raw_exit) * (1 - cfg.slippage_pct)
+    # Close any still-open position at the last available close so ending
+    # equity and return are not based on an ignored position.
+    if position is not None and len(data) > 0:
+        ts = data.index[-1]
+        raw_exit = float(data.iloc[-1]["Close"])
+        exit_price = raw_exit * (1 - cfg.slippage_pct)
         shares = int(position["shares"])
         gross_pnl = (exit_price - position["entry"]) * shares
         exit_commission = exit_price * shares * cfg.commission_pct
@@ -84,26 +130,31 @@ def backtest(
                 "exit": exit_price,
                 "stop": position["stop"],
                 "target": position["target"],
-                "exit_reason": exit_reason,
+                "exit_reason": "END_OF_DATA",
                 "gross_pnl": gross_pnl,
                 "net_pnl": net_pnl,
                 "equity_after": cash,
             }
         )
+        equity_curve[-1] = cash
         position = None
 
     trades_df = pd.DataFrame(trades)
+
+    equity = pd.Series(equity_curve, dtype=float)
+    drawdown = equity / equity.cummax() - 1
+    max_drawdown_pct = float(drawdown.min() * 100)
 
     if trades_df.empty:
         metrics = {
             "starting_cash": cfg.starting_cash,
             "ending_equity": cash,
-            "total_return_pct": 0.0,
+            "total_return_pct": float((cash / cfg.starting_cash - 1) * 100),
             "trades": 0,
             "win_rate_pct": 0.0,
             "profit_factor": None,
             "expectancy": 0.0,
-            "max_drawdown_pct": 0.0,
+            "max_drawdown_pct": max_drawdown_pct,
             "config": asdict(cfg),
         }
         return trades_df, metrics
@@ -115,12 +166,6 @@ def backtest(
     gross_loss = abs(float(losses.sum()))
     profit_factor = gross_profit / gross_loss if gross_loss > 0 else None
 
-    equity = pd.Series(
-        [cfg.starting_cash, *trades_df["equity_after"].tolist()],
-        dtype=float,
-    )
-    drawdown = equity / equity.cummax() - 1
-
     metrics = {
         "starting_cash": cfg.starting_cash,
         "ending_equity": float(cash),
@@ -129,7 +174,7 @@ def backtest(
         "win_rate_pct": float((trades_df["net_pnl"] > 0).mean() * 100),
         "profit_factor": float(profit_factor) if profit_factor is not None else None,
         "expectancy": float(trades_df["net_pnl"].mean()),
-        "max_drawdown_pct": float(drawdown.min() * 100),
+        "max_drawdown_pct": max_drawdown_pct,
         "config": asdict(cfg),
     }
     return trades_df, metrics
