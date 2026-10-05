@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class StrategyConfig:
     symbol: str = "NVDA"
+    strategy_name: str = "breakout"
 
     # Small-account profile: slower timeframe to reduce noise and turnover.
     interval: str = "1h"
@@ -15,6 +16,7 @@ class StrategyConfig:
     atr_period: int = 14
     breakout_period: int = 25
     volume_ma_period: int = 20
+    volume_ratio_min: float = 1.0
 
     rsi_min: float = 50.0
     rsi_max: float = 70.0
