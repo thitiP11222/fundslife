@@ -9,6 +9,19 @@ from src.indicators import atr, ema, rsi
 from src.option_scanner import OptionScanConfig
 
 
+def _date_key(value) -> pd.Timestamp:
+    """
+    Convert tz-aware or tz-naive timestamps to a timezone-free calendar date.
+
+    Daily ranking and hourly signals only need a comparable trading-date key;
+    keeping timezone offsets here creates invalid tz-aware/tz-naive comparisons.
+    """
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is not None:
+        ts = ts.tz_localize(None)
+    return ts.normalize()
+
+
 @dataclass(frozen=True)
 class SignalBacktestConfig:
     max_holding_bars: int = 35
@@ -85,7 +98,11 @@ def _daily_rank_table(
     regime = _benchmark_regime(benchmark_daily, cfg)
 
     all_dates = sorted(
-        set().union(*(df.index.normalize() for df in prepared.values()))
+        {
+            _date_key(ts)
+            for df in prepared.values()
+            for ts in df.index
+        }
     )
 
     rows: list[dict[str, Any]] = []
@@ -94,7 +111,8 @@ def _daily_rank_table(
         scored: list[tuple[float, str, bool]] = []
 
         for symbol, df in prepared.items():
-            day_rows = df[df.index.normalize() == date]
+            date_keys = pd.Index([_date_key(ts) for ts in df.index])
+            day_rows = df[date_keys == date]
             if day_rows.empty:
                 continue
 
@@ -114,7 +132,10 @@ def _daily_rank_table(
 
         scored.sort(reverse=True)
 
-        benchmark_rows = regime[regime.index.normalize() == date]
+        benchmark_date_keys = pd.Index(
+            [_date_key(ts) for ts in regime.index]
+        )
+        benchmark_rows = regime[benchmark_date_keys == date]
         risk_on = bool(benchmark_rows.iloc[-1]) if not benchmark_rows.empty else False
 
         for rank, (score, symbol, trend_ready) in enumerate(scored, start=1):
@@ -185,7 +206,7 @@ def backtest_grade_a_signals(
             if any(pd.isna(value) for value in required):
                 continue
 
-            signal_date = pd.Timestamp(signal_time).normalize()
+            signal_date = _date_key(signal_time)
 
             # Use the most recently completed daily bar strictly before the
             # hourly signal date to avoid same-day daily look-ahead.
