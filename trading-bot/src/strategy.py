@@ -18,15 +18,55 @@ def build_features(df: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
     )
 
 
-def generate_signals(df: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
-    out = build_features(df, cfg)
+def _breakout_signal(out: pd.DataFrame, cfg: StrategyConfig) -> pd.Series:
+    volume_ok = out["Volume"] >= out["VOLUME_MA"] * cfg.volume_ratio_min
 
-    long_condition = (
+    return (
         (out["EMA_FAST"] > out["EMA_SLOW"])
         & (out["Close"] > out["BREAKOUT_HIGH"])
         & out["RSI"].between(cfg.rsi_min, cfg.rsi_max, inclusive="both")
-        & (out["Volume"] >= out["VOLUME_MA"])
+        & volume_ok
     )
+
+
+def _pullback_reclaim_signal(out: pd.DataFrame, cfg: StrategyConfig) -> pd.Series:
+    """
+    Trend-pullback setup.
+
+    Wait for price to pull back to/below EMA20, then reclaim EMA20 with a
+    bullish candle while EMA20 remains above EMA50. This avoids chasing a
+    fresh multi-bar high, which was weak in the NVDA 1h validation sample.
+    """
+    volume_ok = out["Volume"] >= out["VOLUME_MA"] * cfg.volume_ratio_min
+
+    reclaimed_fast_ema = (
+        (out["Close"].shift(1) <= out["EMA_FAST"].shift(1))
+        & (out["Close"] > out["EMA_FAST"])
+    )
+
+    bullish_candle = out["Close"] > out["Open"]
+
+    return (
+        (out["EMA_FAST"] > out["EMA_SLOW"])
+        & reclaimed_fast_ema
+        & bullish_candle
+        & out["RSI"].between(cfg.rsi_min, cfg.rsi_max, inclusive="both")
+        & volume_ok
+    )
+
+
+def generate_signals(df: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
+    out = build_features(df, cfg)
+
+    if cfg.strategy_name == "breakout":
+        long_condition = _breakout_signal(out, cfg)
+    elif cfg.strategy_name == "pullback_reclaim":
+        long_condition = _pullback_reclaim_signal(out, cfg)
+    else:
+        raise ValueError(
+            f"Unknown strategy_name={cfg.strategy_name!r}. "
+            "Use 'breakout' or 'pullback_reclaim'."
+        )
 
     out["SIGNAL"] = 0
     out.loc[long_condition, "SIGNAL"] = 1
@@ -40,6 +80,7 @@ def latest_signal(df: pd.DataFrame, cfg: StrategyConfig) -> dict:
     return {
         "time": str(signals.index[-1]),
         "symbol": cfg.symbol,
+        "strategy": cfg.strategy_name,
         "signal": "BUY" if int(row["SIGNAL"]) == 1 else "NO_TRADE",
         "close": float(row["Close"]),
         "ema_fast": float(row["EMA_FAST"]) if pd.notna(row["EMA_FAST"]) else None,
