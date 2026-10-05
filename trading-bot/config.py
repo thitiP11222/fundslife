@@ -23,6 +23,8 @@ class StrategyConfig:
 
     atr_stop_multiplier: float = 2.0
     risk_reward_ratio: float = 2.0
+    exit_mode: str = "fixed_rr"
+    trailing_atr_multiplier: float = 1.0
 
     # Backtests are priced in USD because Yahoo Finance US-stock data is in USD.
     # Set this to the USD-equivalent of your THB budget after broker FX conversion.
