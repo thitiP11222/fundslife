@@ -107,3 +107,77 @@ Before any real-money automation, add and validate:
 10. monitoring and a kill switch
 
 Parameters should be evaluated for robustness across symbols and periods rather than selected only for the best historical result.
+
+
+## Validation workflow (V2)
+
+After the normal backtest passes, run:
+
+```powershell
+python run_validation.py
+```
+
+This performs three checks:
+
+### 1. Buy & Hold benchmark
+
+The strategy is compared with a simple close-to-close NVDA benchmark. A trading
+strategy should not be judged only by whether it made money; compare it with
+what happened if the same market exposure had simply been held.
+
+### 2. Rolling out-of-sample validation
+
+The data is divided into sequential train/test windows. Strategy metrics are
+measured only on later test windows that were not used as the preceding
+training period.
+
+The current implementation keeps parameters fixed. It is therefore a rolling
+out-of-sample robustness check rather than an automatic parameter optimizer.
+
+Output:
+
+```text
+results/walk_forward_NVDA_15m.csv
+```
+
+Important fields:
+
+- strategy_return_pct
+- buy_hold_return_pct
+- trades
+- win_rate_pct
+- profit_factor
+- expectancy
+
+A more credible strategy should work across several independent windows, not
+only one historical period.
+
+### 3. Parameter sensitivity
+
+The validator evaluates nearby values for:
+
+- breakout period: 15 / 20 / 25
+- ATR stop multiplier: 1.0 / 1.5 / 2.0
+- risk-reward ratio: 1.5 / 2.0 / 2.5
+
+Output:
+
+```text
+results/parameter_sensitivity_NVDA_15m.csv
+```
+
+Do not simply choose the row with the highest historical return. Look for a
+stable region where several nearby parameter combinations produce reasonable
+results. One isolated best combination is a warning sign for overfitting.
+
+## Recommended decision gate before paper trading
+
+Do not proceed to broker execution just because one backtest is profitable.
+At minimum review:
+
+1. enough total trades to make metrics meaningful
+2. positive expectancy across multiple out-of-sample folds
+3. drawdown acceptable for the intended account
+4. results not dependent on one parameter combination
+5. comparison against Buy & Hold
+6. performance across more than one liquid stock and market regime
