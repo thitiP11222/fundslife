@@ -68,6 +68,27 @@ def generate_signals(df: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
             "Use 'breakout' or 'pullback_reclaim'."
         )
 
+    if cfg.use_market_regime:
+        required = {
+            "BENCH_CLOSE",
+            "BENCH_EMA_FAST",
+            "BENCH_EMA_SLOW",
+            "RS_VS_BENCH",
+        }
+        missing = required.difference(out.columns)
+        if missing:
+            raise ValueError(
+                "Market regime filter enabled but context columns are missing: "
+                + ", ".join(sorted(missing))
+            )
+
+        market_ok = (
+            (out["BENCH_CLOSE"] > out["BENCH_EMA_SLOW"])
+            & (out["BENCH_EMA_FAST"] > out["BENCH_EMA_SLOW"])
+        )
+        relative_strength_ok = out["RS_VS_BENCH"] > cfg.rs_min
+        long_condition = long_condition & market_ok & relative_strength_ok
+
     out["SIGNAL"] = 0
     out.loc[long_condition, "SIGNAL"] = 1
     return out
