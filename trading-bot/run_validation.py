@@ -14,9 +14,9 @@ from src.validation import (
 
 
 def main() -> None:
-    # Yahoo Finance intraday history is limited, so use the widest practical
-    # window for 15-minute research while keeping the strategy unchanged.
-    cfg = replace(DEFAULT_CONFIG, period="60d")
+    # Small-account profile uses 1-hour bars and a longer history to reduce
+    # noise and expose the strategy to more than one short market regime.
+    cfg = replace(DEFAULT_CONFIG, interval="1h", period="1y")
 
     results_dir = Path("results")
     results_dir.mkdir(exist_ok=True)
