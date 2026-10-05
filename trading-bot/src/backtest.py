@@ -38,6 +38,8 @@ def backtest(
                 entry_price=entry,
                 stop_price=stop,
                 max_position_value_pct=cfg.max_position_value_pct,
+                allow_fractional=cfg.allow_fractional_shares,
+                share_step=cfg.share_step,
             )
 
             if shares > 0:
@@ -71,7 +73,7 @@ def backtest(
 
             if raw_exit is not None:
                 exit_price = float(raw_exit) * (1 - cfg.slippage_pct)
-                shares = int(position["shares"])
+                shares = float(position["shares"])
                 gross_pnl = (exit_price - position["entry"]) * shares
                 exit_commission = exit_price * shares * cfg.commission_pct
                 net_pnl = (
@@ -103,7 +105,7 @@ def backtest(
         if position is None:
             marked_equity = cash
         else:
-            shares = int(position["shares"])
+            shares = float(position["shares"])
             unrealized = (float(row["Close"]) - position["entry"]) * shares
             marked_equity = cash + unrealized - position["entry_commission"]
 
@@ -115,7 +117,7 @@ def backtest(
         ts = data.index[-1]
         raw_exit = float(data.iloc[-1]["Close"])
         exit_price = raw_exit * (1 - cfg.slippage_pct)
-        shares = int(position["shares"])
+        shares = float(position["shares"])
         gross_pnl = (exit_price - position["entry"]) * shares
         exit_commission = exit_price * shares * cfg.commission_pct
         net_pnl = gross_pnl - position["entry_commission"] - exit_commission
