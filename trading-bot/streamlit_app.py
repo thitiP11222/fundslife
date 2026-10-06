@@ -4,18 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.data import (
-    download_ohlcv,
-    get_option_chain,
-    get_option_expirations,
-)
-from src.options_advisor import (
-    OptionAdvisorConfig,
-    expiration_candidates,
-    option_readiness,
-    screen_long_calls,
-    summarize_option_fit,
-)
+from src.data import download_ohlcv
 from src.risk import position_size_from_risk
 from src.technical_dashboard import (
     TechnicalConfig,
@@ -70,19 +59,6 @@ def load_data(
     period_value: str,
 ) -> pd.DataFrame:
     return download_ohlcv(ticker, interval, period_value)
-
-
-@st.cache_data(ttl=120)
-def load_option_expirations(symbol: str) -> list[str]:
-    return get_option_expirations(symbol)
-
-
-@st.cache_data(ttl=60)
-def load_option_chain(
-    symbol: str,
-    expiration: str,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    return get_option_chain(symbol, expiration)
 
 
 @st.cache_data(ttl=300)
@@ -284,17 +260,6 @@ with st.sidebar:
         step=5,
     )
 
-    option_budget_pct = st.slider(
-        "งบสูงสุดสำหรับ Option 1 สัญญา (%)",
-        min_value=5,
-        max_value=100,
-        value=10,
-        step=5,
-        help=(
-            "Long option อาจเสีย premium ได้ทั้งหมด จึงแยกงบ Option "
-            "ออกจาก position sizing ของหุ้น"
-        ),
-    )
 
     st.divider()
 
@@ -395,11 +360,10 @@ except Exception as exc:
     st.stop()
 
 
-tab_overview, tab_chart, tab_options, tab_details = st.tabs(
+tab_overview, tab_chart, tab_details = st.tabs(
     [
         "Trade Plan",
         "Chart",
-        "Options Plan",
         "Technical Details",
     ]
 )
@@ -565,221 +529,6 @@ with tab_chart:
         st.write(f"**Support:** {support_text}")
     with level_right:
         st.write(f"**Resistance:** {resistance_text}")
-
-
-with tab_options:
-    st.subheader(f"{symbol} Options Plan · Long Call")
-
-    scanner_action = (
-        str(scan_row["fractional_action"])
-        if not scanner_match.empty
-        else None
-    )
-
-    readiness = option_readiness(
-        market_risk_on=bool(regime["risk_on"]),
-        scanner_action=scanner_action,
-        technical_setup=plan["setup"],
-        current_price=float(plan["close"]),
-        entry_mode=entry_mode,
-        entry_price=float(entry_price),
-        atr_value=float(plan["atr"]),
-    )
-
-    option_budget = float(account_equity) * float(option_budget_pct) / 100.0
-
-    o1, o2, o3, o4 = st.columns(4)
-    with o1:
-        st.metric("Underlying", symbol)
-    with o2:
-        st.metric("Option status", readiness["status"])
-    with o3:
-        st.metric("Option budget", f"USD {option_budget:.2f}")
-    with o4:
-        st.metric("Preferred DTE", "30–60 days")
-
-    if readiness["ready"]:
-        st.success(readiness["reason"])
-    else:
-        st.warning(readiness["reason"])
-
-    st.markdown("#### Contract rules")
-
-    st.write(
-        "- Direction: Long Call only when the bullish underlying setup is confirmed."
-    )
-    st.write(
-        "- Expiration: prefer roughly 30–60 DTE so the trade has more time than the expected holding horizon."
-    )
-    st.write(
-        "- Strike: prioritize ATM or slightly ITM; do not choose far OTM only because the premium looks cheap."
-    )
-    st.write(
-        "- Execution: prefer tight bid/ask spread plus meaningful volume/open interest; use Dime live quote before ordering."
-    )
-    st.write(
-        "- Risk: one long option can lose 100% of its premium. The stock stop is a thesis reference, not a guaranteed option stop price."
-    )
-
-    load_key = f"option_chain_enabled_{symbol}"
-
-    if st.button(
-        "Load Option Chain",
-        key=f"load_option_chain_{symbol}",
-        use_container_width=True,
-    ):
-        st.session_state[load_key] = True
-
-    if st.session_state.get(load_key, False):
-        try:
-            expirations = load_option_expirations(symbol)
-            expiry_df = expiration_candidates(
-                expirations,
-                cfg=OptionAdvisorConfig(),
-            )
-        except Exception as exc:
-            st.error(f"โหลดวันหมดอายุ Option ไม่สำเร็จ: {exc}")
-            expiry_df = pd.DataFrame()
-
-        if expiry_df.empty:
-            st.info(
-                "ไม่พบ expiration ในช่วง 30–60 DTE จาก Yahoo Finance ตอนนี้"
-            )
-        else:
-            expiry_options = expiry_df["expiration"].tolist()
-            expiry_map = dict(
-                zip(
-                    expiry_df["expiration"],
-                    expiry_df["dte"],
-                )
-            )
-
-            selected_expiry = st.selectbox(
-                "Expiration",
-                expiry_options,
-                format_func=lambda value: (
-                    f"{value} · {expiry_map[value]} DTE"
-                ),
-                key=f"expiry_{symbol}",
-            )
-
-            try:
-                calls, _ = load_option_chain(
-                    symbol,
-                    selected_expiry,
-                )
-
-                candidates = screen_long_calls(
-                    calls,
-                    spot_price=float(plan["close"]),
-                    account_equity=float(account_equity),
-                    option_budget_pct=float(option_budget_pct),
-                    cfg=OptionAdvisorConfig(),
-                )
-
-                fit = summarize_option_fit(candidates)
-            except Exception as exc:
-                st.error(f"โหลด Option Chain ไม่สำเร็จ: {exc}")
-                candidates = pd.DataFrame()
-                fit = {
-                    "status": "DATA_ERROR",
-                    "message": "Option-chain data could not be analyzed.",
-                }
-
-            st.markdown("#### Option decision")
-
-            if fit["status"] == "REVIEW_CONTRACT":
-                st.success(fit["message"])
-
-                q1, q2, q3, q4 = st.columns(4)
-                with q1:
-                    st.metric(
-                        "Strike",
-                        f"USD {fit['strike']:.2f}",
-                    )
-                with q2:
-                    st.metric(
-                        "Ask",
-                        f"USD {fit['ask']:.2f}",
-                    )
-                with q3:
-                    st.metric(
-                        "1 contract cost",
-                        f"USD {fit['estimated_entry_cost']:.2f}",
-                    )
-                with q4:
-                    iv_value = fit["iv_pct"]
-                    st.metric(
-                        "IV",
-                        (
-                            f"{iv_value:.1f}%"
-                            if iv_value is not None
-                            else "N/A"
-                        ),
-                    )
-
-                st.write(
-                    f"Candidate: **{fit['moneyness']} Call** · "
-                    f"spread {fit['spread_pct']:.1f}% · "
-                    f"volume {fit['volume']} · "
-                    f"open interest {fit['open_interest']}"
-                )
-
-                st.warning(
-                    "เปิด Dime แล้วตรวจ expiration, strike, bid/ask และ premium อีกครั้งก่อนส่งคำสั่ง "
-                    "เพราะ Yahoo chain อาจต่างจากราคา live ใน Dime"
-                )
-
-            elif fit["status"] == "OVER_BUDGET":
-                st.error(fit["message"])
-                st.write(
-                    "อย่าลดคุณภาพไปซื้อ far-OTM เพียงเพื่อให้เข้ากับงบ เพราะความน่าจะเป็นและ time-decay risk จะสูงขึ้น"
-                )
-            elif fit["status"] == "POOR_LIQUIDITY":
-                st.warning(fit["message"])
-            else:
-                st.info(fit["message"])
-
-            if not candidates.empty:
-                st.markdown("#### Screened calls")
-
-                display_columns = [
-                    "contractSymbol",
-                    "strike",
-                    "moneyness",
-                    "bid",
-                    "ask",
-                    "spread_pct",
-                    "volume",
-                    "openInterest",
-                    "impliedVolatility",
-                    "estimated_entry_cost",
-                    "within_option_budget",
-                    "liquidity_ok",
-                ]
-
-                visible = [
-                    column for column in display_columns
-                    if column in candidates.columns
-                ]
-
-                table = candidates[visible].head(10).copy()
-
-                if "impliedVolatility" in table.columns:
-                    table["impliedVolatility"] = (
-                        table["impliedVolatility"] * 100
-                    )
-
-                st.dataframe(
-                    table,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-    st.caption(
-        "Yahoo Finance ใช้เป็น screening data เท่านั้น ไม่ใช่ Dime execution feed. "
-        "Dime คิดสัญญาเป็น 100 หุ้นต่อ 1 contract และควรตรวจราคา live บนแอปก่อนซื้อ."
-    )
 
 
 
