@@ -44,3 +44,6 @@ def test_trade_plan_contains_risk_levels():
     assert plan["setup"] in {"BUY_SETUP", "WATCH", "AVOID"}
     assert plan["stop"] < plan["target_1"] < plan["target_2"]
     assert 0 <= plan["score"] <= 100
+    assert "pattern_state" in plan
+    assert "name" in plan["pattern_state"]
+    assert "bias" in plan["pattern_state"]
