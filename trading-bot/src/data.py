@@ -36,14 +36,3 @@ def download_ohlcv(symbol: str, interval: str, period: str) -> pd.DataFrame:
     out = df[REQUIRED_COLUMNS].copy()
     out.index = pd.to_datetime(out.index)
     return out.dropna().sort_index()
-
-
-def get_option_expirations(symbol: str) -> list[str]:
-    ticker = yf.Ticker(symbol)
-    return list(ticker.options)
-
-
-def get_option_chain(symbol: str, expiration: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    ticker = yf.Ticker(symbol)
-    chain = ticker.option_chain(expiration)
-    return chain.calls.copy(), chain.puts.copy()
