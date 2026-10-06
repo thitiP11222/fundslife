@@ -396,3 +396,56 @@ streamlit run streamlit_app.py
 - News / earnings-event filters are not yet integrated.
 - Position sizing does not include FX conversion or broker-specific minimum fees.
 - Historical momentum evidence can weaken or disappear in future regimes.
+
+
+## Options Plan
+
+The Streamlit workstation now includes an `Options Plan` tab for **long-call screening**.
+
+The workflow is deliberately two-stage:
+
+```text
+Underlying selection
+Momentum + market regime + technical setup
+        |
+        v
+Entry confirmation
+Pullback zone or breakout confirmation
+        |
+        v
+Option contract screening
+30-60 DTE / ATM or slightly ITM / liquidity / spread / premium budget
+        |
+        v
+Manual verification in Dime
+```
+
+The option engine does not buy contracts automatically.
+
+Current option-chain screening uses Yahoo Finance as research data and checks:
+
+- expiration roughly 30-60 DTE
+- strike roughly 95%-101% of spot
+- bid/ask spread
+- volume
+- open interest
+- implied volatility display
+- 100-share contract multiplier
+- estimated premium cost for one contract
+- whether one contract fits the user-defined option budget
+
+Default liquidity heuristics are:
+
+```text
+Open interest >= 100
+Volume >= 10
+Bid/ask spread <= 15%
+```
+
+These are execution-quality heuristics, not validated alpha parameters.
+
+The system intentionally refuses to solve an undersized account by automatically moving to far-OTM contracts. A cheap option can still be a poor trade because it may have low delta, severe time decay, wide spreads, or low probability of finishing profitably.
+
+For Dime execution, always verify the live contract, expiration, strike, bid/ask and premium inside the Dime application before placing an order. One listed US stock option contract normally represents 100 shares.
+
+The stock stop/invalidation level is a thesis reference for the underlying. An option premium can decline materially before the underlying reaches that price because option value also depends on time decay and implied volatility.
