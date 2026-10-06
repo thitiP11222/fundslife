@@ -394,9 +394,25 @@ def build_trade_plan(df: pd.DataFrame, cfg: TechnicalConfig | None = None) -> di
     breakout_entry = nearest_resistance + 0.10 * atr_value
     stop = min(nearest_support - 0.50 * atr_value, ema20_value - atr_value)
 
-    risk = max(pullback_entry - stop, atr_value * 0.5)
-    target_1 = pullback_entry + cfg.target_r_multiple_1 * risk
-    target_2 = pullback_entry + cfg.target_r_multiple_2 * risk
+    pullback_risk = max(pullback_entry - stop, atr_value * 0.5)
+    pullback_target_1 = (
+        pullback_entry
+        + cfg.target_r_multiple_1 * pullback_risk
+    )
+    pullback_target_2 = (
+        pullback_entry
+        + cfg.target_r_multiple_2 * pullback_risk
+    )
+
+    breakout_risk = max(breakout_entry - stop, atr_value * 0.5)
+    breakout_target_1 = (
+        breakout_entry
+        + cfg.target_r_multiple_1 * breakout_risk
+    )
+    breakout_target_2 = (
+        breakout_entry
+        + cfg.target_r_multiple_2 * breakout_risk
+    )
 
     return {
         "setup": setup,
@@ -414,8 +430,12 @@ def build_trade_plan(df: pd.DataFrame, cfg: TechnicalConfig | None = None) -> di
         "pullback_entry": pullback_entry,
         "breakout_entry": breakout_entry,
         "stop": stop,
-        "target_1": target_1,
-        "target_2": target_2,
+        "target_1": pullback_target_1,
+        "target_2": pullback_target_2,
+        "pullback_target_1": pullback_target_1,
+        "pullback_target_2": pullback_target_2,
+        "breakout_target_1": breakout_target_1,
+        "breakout_target_2": breakout_target_2,
         "patterns": patterns,
         "pattern_state": pattern_state,
         "reasons": reasons,
