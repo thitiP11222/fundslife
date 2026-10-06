@@ -10,6 +10,7 @@ from src.technical_dashboard import (
     add_dashboard_indicators,
     build_trade_plan,
 )
+from src.risk import position_size_from_risk
 
 
 st.set_page_config(
@@ -50,6 +51,29 @@ with st.sidebar:
 
     if st.button("Refresh data", use_container_width=True):
         st.cache_data.clear()
+
+    st.divider()
+    st.subheader("Risk Management")
+    account_equity = st.number_input(
+        "Account equity (USD)",
+        min_value=1.0,
+        value=30.0,
+        step=5.0,
+    )
+    risk_pct = st.number_input(
+        "Risk per trade (%)",
+        min_value=0.1,
+        max_value=10.0,
+        value=2.0,
+        step=0.1,
+    )
+    max_position_pct = st.number_input(
+        "Max position allocation (%)",
+        min_value=5.0,
+        max_value=100.0,
+        value=60.0,
+        step=5.0,
+    )
 
     st.divider()
     st.caption(
@@ -210,6 +234,51 @@ with c4:
     st.write(f"USD {plan['target_1']:.2f}")
     st.write("**Target 2**")
     st.write(f"USD {plan['target_2']:.2f}")
+
+st.subheader("Position sizing")
+
+pullback_shares = position_size_from_risk(
+    equity=float(account_equity),
+    risk_fraction=float(risk_pct) / 100.0,
+    entry_price=plan["pullback_entry"],
+    stop_price=plan["stop"],
+    max_position_value_pct=float(max_position_pct) / 100.0,
+    allow_fractional=True,
+    share_step=0.001,
+)
+
+breakout_shares = position_size_from_risk(
+    equity=float(account_equity),
+    risk_fraction=float(risk_pct) / 100.0,
+    entry_price=plan["breakout_entry"],
+    stop_price=plan["stop"],
+    max_position_value_pct=float(max_position_pct) / 100.0,
+    allow_fractional=True,
+    share_step=0.001,
+)
+
+risk_budget = float(account_equity) * float(risk_pct) / 100.0
+
+r1, r2, r3 = st.columns(3)
+with r1:
+    st.metric("Risk budget", f"USD {risk_budget:.2f}")
+with r2:
+    st.metric(
+        "Pullback size",
+        f"{pullback_shares:.3f} shares",
+        help=f"Approx. position value USD {pullback_shares * plan['pullback_entry']:.2f}",
+    )
+with r3:
+    st.metric(
+        "Breakout size",
+        f"{breakout_shares:.3f} shares",
+        help=f"Approx. position value USD {breakout_shares * plan['breakout_entry']:.2f}",
+    )
+
+st.caption(
+    "Position size = min(risk-budget sizing, maximum allocation). "
+    "Fractional-share step is 0.001 share."
+)
 
 st.subheader("Chart patterns")
 
