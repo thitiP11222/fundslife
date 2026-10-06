@@ -284,6 +284,18 @@ with st.sidebar:
         step=5,
     )
 
+    option_budget_pct = st.slider(
+        "งบสูงสุดสำหรับ Option 1 สัญญา (%)",
+        min_value=5,
+        max_value=100,
+        value=10,
+        step=5,
+        help=(
+            "Long option อาจเสีย premium ได้ทั้งหมด จึงแยกงบ Option "
+            "ออกจาก position sizing ของหุ้น"
+        ),
+    )
+
     st.divider()
 
     timeframe = st.selectbox(
