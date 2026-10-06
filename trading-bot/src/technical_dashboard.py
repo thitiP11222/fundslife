@@ -272,7 +272,6 @@ def classify_market_pattern(
 
     # 6) Double bottom/top confirmation from existing detector.
     patterns = detect_patterns(x, cfg)
-    pattern_state = classify_market_pattern(x, cfg)
     names = {p["name"] for p in patterns}
 
     if "Possible Double Bottom" in names:
@@ -349,6 +348,7 @@ def build_trade_plan(df: pd.DataFrame, cfg: TechnicalConfig | None = None) -> di
     levels = detect_support_resistance(x, cfg)
     supports, resistances = levels["supports"], levels["resistances"]
     patterns = detect_patterns(x, cfg)
+    pattern_state = classify_market_pattern(x, cfg)
 
     bullish_score = sum(p["strength"] for p in patterns if p["bias"] == "bullish")
     bearish_score = sum(p["strength"] for p in patterns if p["bias"] == "bearish")
