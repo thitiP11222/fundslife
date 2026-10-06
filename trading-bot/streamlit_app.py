@@ -72,6 +72,19 @@ def load_data(
     return download_ohlcv(ticker, interval, period_value)
 
 
+@st.cache_data(ttl=120)
+def load_option_expirations(symbol: str) -> list[str]:
+    return get_option_expirations(symbol)
+
+
+@st.cache_data(ttl=60)
+def load_option_chain(
+    symbol: str,
+    expiration: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    return get_option_chain(symbol, expiration)
+
+
 @st.cache_data(ttl=300)
 def load_momentum_scan() -> tuple[pd.DataFrame, dict]:
     benchmark = download_ohlcv(
