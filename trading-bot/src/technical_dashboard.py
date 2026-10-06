@@ -130,6 +130,203 @@ def detect_patterns(df: pd.DataFrame, cfg: TechnicalConfig) -> list[dict[str, An
     return patterns
 
 
+
+def classify_market_pattern(
+    df: pd.DataFrame,
+    cfg: TechnicalConfig,
+) -> dict[str, Any]:
+    """
+    Classify the latest chart into one primary, trader-friendly setup.
+
+    This is heuristic pattern recognition, not computer-vision prediction.
+    Priority is given to structures that are commonly used for trend-entry
+    timing: breakout, breakout-retest, ascending triangle, bull flag,
+    EMA pullback, double bottom, then range/no-clear-pattern.
+    """
+    x = add_dashboard_indicators(df, cfg)
+    if len(x) < 35:
+        return {
+            "name": "Insufficient data",
+            "bias": "neutral",
+            "confidence": 0,
+            "trigger": None,
+            "invalidation": None,
+            "note": "Need more bars to classify the setup.",
+        }
+
+    row = x.iloc[-1]
+    close = float(row["Close"])
+    ema20_value = float(row["EMA20"])
+    ema50_value = float(row["EMA50"])
+    atr_value = float(row["ATR14"])
+    volume_ma = float(row["VOL_MA20"])
+    volume_ratio = float(row["Volume"]) / volume_ma if volume_ma > 0 else 0.0
+
+    recent20 = x.tail(20)
+    recent10 = x.tail(10)
+    recent6 = x.tail(6)
+
+    prev_20_high = float(x["High"].iloc[-21:-1].max())
+    prev_20_low = float(x["Low"].iloc[-21:-1].min())
+
+    trend_up = close > ema20_value > ema50_value
+    trend_down = close < ema20_value < ema50_value
+
+    # 1) Fresh breakout
+    if close > prev_20_high and volume_ratio >= 1.0:
+        return {
+            "name": "Breakout",
+            "bias": "bullish",
+            "confidence": 90,
+            "trigger": prev_20_high + 0.10 * atr_value,
+            "invalidation": prev_20_high - 0.75 * atr_value,
+            "note": "Price closed above the prior 20-bar high with volume confirmation.",
+        }
+
+    # 2) Breakout retest: a recent close was above resistance, current price
+    # revisits that area but remains above it.
+    prior_closes = recent6["Close"].iloc[:-1]
+    had_breakout = bool((prior_closes > prev_20_high).any())
+    retest_distance = abs(close - prev_20_high)
+
+    if (
+        trend_up
+        and had_breakout
+        and retest_distance <= 0.60 * atr_value
+        and close >= prev_20_high - 0.20 * atr_value
+    ):
+        return {
+            "name": "Breakout Retest",
+            "bias": "bullish",
+            "confidence": 88,
+            "trigger": prev_20_high + 0.20 * atr_value,
+            "invalidation": prev_20_high - 0.80 * atr_value,
+            "note": "Recent breakout is being retested near former resistance.",
+        }
+
+    # 3) Ascending triangle: highs cluster while lows rise.
+    highs = recent10["High"].astype(float)
+    lows = recent10["Low"].astype(float)
+    high_band = float(highs.max() - highs.min())
+    low_slope = float(np.polyfit(np.arange(len(lows)), lows.values, 1)[0])
+
+    if (
+        trend_up
+        and high_band <= 1.25 * atr_value
+        and low_slope > 0
+        and close >= float(highs.max()) - 1.0 * atr_value
+    ):
+        resistance = float(highs.max())
+        return {
+            "name": "Ascending Triangle",
+            "bias": "bullish",
+            "confidence": 82,
+            "trigger": resistance + 0.10 * atr_value,
+            "invalidation": float(lows.tail(5).min()) - 0.25 * atr_value,
+            "note": "Highs are compressing near resistance while recent lows are rising.",
+        }
+
+    # 4) Bull flag: strong impulse followed by a shallow consolidation.
+    impulse = x.iloc[-16:-6]
+    flag = x.iloc[-6:]
+    impulse_gain = (
+        float(impulse["Close"].iloc[-1]) - float(impulse["Close"].iloc[0])
+    )
+    flag_pullback = (
+        float(flag["Close"].iloc[-1]) - float(flag["Close"].iloc[0])
+    )
+
+    if (
+        trend_up
+        and impulse_gain >= 2.0 * atr_value
+        and flag_pullback <= 0.5 * atr_value
+        and float(flag["Low"].min()) >= ema20_value - 0.75 * atr_value
+    ):
+        flag_high = float(flag["High"].max())
+        flag_low = float(flag["Low"].min())
+        return {
+            "name": "Bull Flag",
+            "bias": "bullish",
+            "confidence": 80,
+            "trigger": flag_high + 0.10 * atr_value,
+            "invalidation": flag_low - 0.25 * atr_value,
+            "note": "Strong upward impulse followed by a shallow consolidation above the trend.",
+        }
+
+    # 5) EMA pullback in an uptrend.
+    distance_ema20 = abs(close - ema20_value)
+
+    if (
+        trend_up
+        and distance_ema20 <= 0.75 * atr_value
+        and float(row["RSI14"]) >= 45
+    ):
+        return {
+            "name": "EMA20 Pullback",
+            "bias": "bullish",
+            "confidence": 75,
+            "trigger": max(close, ema20_value + 0.20 * atr_value),
+            "invalidation": ema20_value - 1.0 * atr_value,
+            "note": "Price is pulling back toward a rising EMA20 while the broader trend remains bullish.",
+        }
+
+    # 6) Double bottom/top confirmation from existing detector.
+    patterns = detect_patterns(x, cfg)
+    pattern_state = classify_market_pattern(x, cfg)
+    names = {p["name"] for p in patterns}
+
+    if "Possible Double Bottom" in names:
+        return {
+            "name": "Possible Double Bottom",
+            "bias": "bullish",
+            "confidence": 65,
+            "trigger": float(recent20["High"].tail(8).max()),
+            "invalidation": float(recent20["Low"].min()) - 0.25 * atr_value,
+            "note": "Two recent lows formed near the same zone; wait for neckline confirmation.",
+        }
+
+    if "Possible Double Top" in names:
+        return {
+            "name": "Possible Double Top",
+            "bias": "bearish",
+            "confidence": 65,
+            "trigger": float(recent20["Low"].tail(8).min()),
+            "invalidation": float(recent20["High"].max()) + 0.25 * atr_value,
+            "note": "Two recent highs formed near the same zone; bullish entries need caution.",
+        }
+
+    # 7) Range / no clear setup.
+    range_width = float(recent20["High"].max() - recent20["Low"].min())
+    if range_width <= 4.0 * atr_value:
+        return {
+            "name": "Range / Consolidation",
+            "bias": "neutral",
+            "confidence": 60,
+            "trigger": float(recent20["High"].max()) + 0.10 * atr_value,
+            "invalidation": float(recent20["Low"].min()) - 0.10 * atr_value,
+            "note": "Price is consolidating; wait for a confirmed break or support reaction.",
+        }
+
+    if trend_down:
+        return {
+            "name": "Downtrend",
+            "bias": "bearish",
+            "confidence": 80,
+            "trigger": None,
+            "invalidation": ema20_value + atr_value,
+            "note": "Close is below EMA20 and EMA50; avoid forcing bullish trades.",
+        }
+
+    return {
+        "name": "No Clear Pattern",
+        "bias": "neutral",
+        "confidence": 40,
+        "trigger": None,
+        "invalidation": None,
+        "note": "Trend exists but no high-quality entry pattern is confirmed.",
+    }
+
+
 def build_trade_plan(df: pd.DataFrame, cfg: TechnicalConfig | None = None) -> dict[str, Any]:
     cfg = cfg or TechnicalConfig()
     x = add_dashboard_indicators(df, cfg)
@@ -220,5 +417,6 @@ def build_trade_plan(df: pd.DataFrame, cfg: TechnicalConfig | None = None) -> di
         "target_1": target_1,
         "target_2": target_2,
         "patterns": patterns,
+        "pattern_state": pattern_state,
         "reasons": reasons,
     }
