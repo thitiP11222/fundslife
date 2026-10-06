@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.data import download_ohlcv
+from src.options_trade_plan import build_long_call_plan
 from src.risk import position_size_from_risk
 from src.technical_dashboard import (
     TechnicalConfig,
@@ -167,17 +168,6 @@ def build_chart(
         line_dash="dashdot",
         annotation_text=f"Stop {plan['stop']:.2f}",
     )
-    fig.add_hline(
-        y=plan["target_1"],
-        line_dash="dot",
-        annotation_text=f"T1 {plan['target_1']:.2f}",
-    )
-    fig.add_hline(
-        y=plan["target_2"],
-        line_dash="dot",
-        annotation_text=f"T2 {plan['target_2']:.2f}",
-    )
-
     fig.update_layout(
         height=650,
         xaxis_rangeslider_visible=False,
@@ -260,6 +250,11 @@ with st.sidebar:
         step=5,
     )
 
+    trade_type = st.radio(
+        "โหมดการเทรด",
+        ["Fractional Stock", "Options (Long Call)"],
+        index=0,
+    )
 
     st.divider()
 
@@ -371,7 +366,9 @@ tab_overview, tab_chart, tab_details = st.tabs(
 with tab_overview:
     st.subheader(f"{symbol} Trade Plan")
 
-    a, b, c, d = st.columns(4)
+    pattern = plan["pattern_state"]
+
+    a, b, c, d, e = st.columns(5)
 
     with a:
         st.metric(
@@ -393,9 +390,22 @@ with tab_overview:
 
     with d:
         st.metric(
-            "RSI",
-            f"{plan['rsi']:.1f}",
+            "Pattern",
+            pattern["name"],
+            help=pattern["note"],
         )
+
+    with e:
+        st.metric(
+            "Pattern confidence",
+            f"{pattern['confidence']}%",
+        )
+
+    st.caption(
+        f"Pattern bias: {pattern['bias']} · "
+        f"RSI {plan['rsi']:.1f} · "
+        f"Volume {plan['volume_ratio']:.2f}x"
+    )
 
     st.markdown("#### เลือกแผนเข้า")
 
@@ -408,41 +418,100 @@ with tab_overview:
 
     if entry_mode == "Pullback":
         entry_price = plan["pullback_entry"]
+        target_1 = plan["pullback_target_1"]
+        target_2 = plan["pullback_target_2"]
         entry_note = "รอราคาย่อกลับมาใกล้แนวรับ/EMA"
     else:
         entry_price = plan["breakout_entry"]
+        target_1 = plan["breakout_target_1"]
+        target_2 = plan["breakout_target_2"]
         entry_note = "รอราคายืนยันเหนือแนวต้านก่อน"
 
-    shares = position_size_from_risk(
-        equity=float(account_equity),
-        risk_fraction=float(risk_pct) / 100.0,
-        entry_price=entry_price,
-        stop_price=plan["stop"],
-        max_position_value_pct=float(max_position_pct) / 100.0,
-        allow_fractional=True,
-        share_step=0.001,
-    )
+    if trade_type == "Fractional Stock":
+        shares = position_size_from_risk(
+            equity=float(account_equity),
+            risk_fraction=float(risk_pct) / 100.0,
+            entry_price=entry_price,
+            stop_price=plan["stop"],
+            max_position_value_pct=float(max_position_pct) / 100.0,
+            allow_fractional=True,
+            share_step=0.001,
+        )
 
-    position_value = shares * entry_price
-    max_loss = shares * abs(entry_price - plan["stop"])
+        position_value = shares * entry_price
+        max_loss = shares * abs(entry_price - plan["stop"])
 
-    p1, p2, p3, p4, p5 = st.columns(5)
+        p1, p2, p3, p4, p5 = st.columns(5)
 
-    with p1:
-        st.metric("Entry", f"USD {entry_price:.2f}")
-    with p2:
-        st.metric("Stop", f"USD {plan['stop']:.2f}")
-    with p3:
-        st.metric("Target 1", f"USD {plan['target_1']:.2f}")
-    with p4:
-        st.metric("Target 2", f"USD {plan['target_2']:.2f}")
-    with p5:
-        st.metric("Size", f"{shares:.3f} shares")
+        with p1:
+            st.metric("Entry", f"USD {entry_price:.2f}")
+        with p2:
+            st.metric("Stop", f"USD {plan['stop']:.2f}")
+        with p3:
+            st.metric("Target 1", f"USD {target_1:.2f}")
+        with p4:
+            st.metric("Target 2", f"USD {target_2:.2f}")
+        with p5:
+            st.metric("Size", f"{shares:.3f} shares")
 
-    st.info(
-        f"{entry_note} · ใช้เงินประมาณ USD {position_value:.2f} · "
-        f"ขาดทุนตาม Stop ประมาณ USD {max_loss:.2f}"
-    )
+        st.info(
+            f"{entry_note} · ใช้เงินประมาณ USD {position_value:.2f} · "
+            f"ขาดทุนตาม Stop ประมาณ USD {max_loss:.2f}"
+        )
+
+    else:
+        shares = 0.0
+        scanner_action = (
+            str(scan_row["fractional_action"])
+            if not scanner_match.empty
+            else None
+        )
+
+        option_plan = build_long_call_plan(
+            market_risk_on=bool(regime["risk_on"]),
+            scanner_action=scanner_action,
+            technical_setup=plan["setup"],
+            technical_score=int(plan["score"]),
+            pattern_state=pattern,
+            current_price=float(plan["close"]),
+            entry_mode=entry_mode,
+            entry_price=float(entry_price),
+            stop_price=float(plan["stop"]),
+            target_1=float(target_1),
+            target_2=float(target_2),
+            rsi=float(plan["rsi"]),
+            volume_ratio=float(plan["volume_ratio"]),
+        )
+
+        p1, p2, p3, p4, p5 = st.columns(5)
+
+        with p1:
+            st.metric("Option status", option_plan["status"])
+        with p2:
+            st.metric("Underlying trigger", f"USD {option_plan['trigger']:.2f}")
+        with p3:
+            st.metric("Invalidation", f"USD {option_plan['invalidation']:.2f}")
+        with p4:
+            st.metric("Target 1", f"USD {option_plan['target_1']:.2f}")
+        with p5:
+            st.metric("Target 2", f"USD {option_plan['target_2']:.2f}")
+
+        if option_plan["status"] == "REVIEW_CALL":
+            st.success(option_plan["message"])
+        else:
+            st.warning(option_plan["message"])
+
+        st.write(
+            f"**Contract guide:** {option_plan['preferred_dte']} · "
+            f"{option_plan['preferred_strike']}"
+        )
+        st.write(
+            f"**Avoid:** {option_plan['avoid']}"
+        )
+        st.caption(
+            "จุดเข้า/ออกด้านบนเป็นระดับของหุ้นแม่ ไม่ใช่ราคา premium ของ Option. "
+            "Long Call มี time decay และ premium สามารถลดลงถึงศูนย์ได้."
+        )
 
     st.markdown("#### Decision checklist")
 
@@ -476,8 +545,12 @@ with tab_overview:
             ),
             (
                 "Risk",
-                shares > 0,
-                f"Risk {risk_pct:.1f}% / trade",
+                (shares > 0 if trade_type == "Fractional Stock" else True),
+                (
+                    f"Risk {risk_pct:.1f}% / trade"
+                    if trade_type == "Fractional Stock"
+                    else "Option risk must be controlled by premium paid"
+                ),
             ),
         ]
     )
