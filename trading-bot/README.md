@@ -386,6 +386,71 @@ streamlit run streamlit_app.py
 10. Record and review the outcome
 ```
 
+
+## Trading modes
+
+The workstation supports two decision modes:
+
+### Fractional Stock
+
+- Momentum selects the underlying.
+- Technical analysis classifies the current pattern.
+- Pullback or breakout entry is selected.
+- Stop and 1R / 2R targets are calculated from that specific entry.
+- Position size is calculated from account equity, risk per trade and maximum allocation.
+
+### Options (Long Call)
+
+The option mode is underlying-driven. It does not assume that a bullish chart automatically means "buy a Call now".
+
+The Long Call gate checks:
+
+- QQQ market regime is Risk-On.
+- Stock is a Top momentum candidate.
+- Technical setup score is strong.
+- Current chart pattern has bullish bias.
+- RSI and volume are supportive.
+- The selected pullback/breakout trigger is reached.
+
+The dashboard then displays:
+
+- Option status: NO_CALL / WAIT / WAIT_PATTERN / WAIT_TRIGGER / WAIT_PULLBACK / REVIEW_CALL
+- underlying trigger
+- underlying invalidation
+- underlying Target 1 / Target 2
+- contract-selection guide: approximately 30-60 DTE and ATM or slightly ITM
+- warning to avoid far-OTM / illiquid / wide-spread contracts
+
+The option engine currently does not price the option premium or calculate Greeks. Entry, stop and targets displayed in this mode refer to the underlying stock.
+
+## Primary chart pattern classifier
+
+The dashboard labels one primary setup so the user can quickly understand what the chart is doing.
+
+Current classifications:
+
+- Breakout
+- Breakout Retest
+- Ascending Triangle
+- Bull Flag
+- EMA20 Pullback
+- Possible Double Bottom
+- Possible Double Top
+- Range / Consolidation
+- Downtrend
+- No Clear Pattern
+
+Each pattern includes:
+
+- directional bias
+- heuristic confidence score
+- trigger level when available
+- invalidation level when available
+- short explanation
+
+Pattern recognition is heuristic and is used as confirmation together with trend, momentum, support/resistance, RSI and volume.
+
+
 ## Limitations
 
 - Yahoo Finance is not guaranteed exchange-grade real-time data.
