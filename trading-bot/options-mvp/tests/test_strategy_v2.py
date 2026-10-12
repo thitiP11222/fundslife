@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from src.strategy_v2 import strategy_v2,compare
+from options_core.strategy_v2 import strategy_v2,compare
 
 def bars(n=320):
     ix=pd.date_range("2023-01-01",periods=n,freq="B")
