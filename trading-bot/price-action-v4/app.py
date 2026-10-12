@@ -7,7 +7,7 @@ import streamlit as st
 import yfinance as yf
 from scanner import indicators,signals,structure,pattern,backtest
 from trade_plan import describe
-from strategy_v5 import filtered_signals,compare_v4_v5
+from strategy_v5 import filtered_signals,compare_v4_v5,filter_diagnostics
 
 st.set_page_config(page_title="Fundslife Price Action V4",layout="wide",page_icon="📈")
 @st.cache_data(ttl=900)
@@ -79,6 +79,10 @@ st.caption("Fixed entry filters: max ATR/price 4.5%, max EMA20 extension 1 ATR, 
 try:
     comparison=compare_v4_v5(a,m,hold=hold,stop_atr=stop,rr=rr)
     st.dataframe(comparison,hide_index=True,use_container_width=True)
+    st.subheader("Why did V5 make zero trades?")
+    diagnostic=filter_diagnostics(a,m)
+    st.dataframe(diagnostic,hide_index=True,use_container_width=True)
+    st.caption("Counts use all V4 signal bars. Opening gap is checked at next session open, never assumed known before that open.")
     st.warning("Do not select V5 solely because it scores better on a viewed holdout; evaluate on fresh dates and other tickers.")
 except Exception as error:
     st.warning(f"V5 comparison unavailable: {error}")
