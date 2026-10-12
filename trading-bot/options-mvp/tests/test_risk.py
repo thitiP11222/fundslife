@@ -1,5 +1,5 @@
 import pytest
-from src.risk import option_risk_check
+from options_core.risk import option_risk_check
 
 def test_small_capital_rejects_contract():
     x=option_risk_check(equity_thb=1000,risk_pct=1,fx_thb_per_usd=35,
