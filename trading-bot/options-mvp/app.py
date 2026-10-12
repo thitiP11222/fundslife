@@ -9,6 +9,7 @@ from options_core.engine import features, signals, backtest_underlying
 from options_core.risk import option_risk_check
 from options_core.alerts import dispatch_telegram
 from options_core.strategy_v2 import compare
+from options_core.backtest_v3 import backtest_atr
 
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_history(symbol: str):
@@ -70,6 +71,25 @@ try:
     st.caption("Out-of-sample = final 30% of daily history. No parameters trained on that holdout; validate across more tickers and periods before use.")
 except Exception as exc:
     st.warning(f"V2 comparison unavailable: {exc}")
+st.subheader("Backtest V3 — ATR exits (underlying proxy)")
+c1,c2,c3=st.columns(3)
+with c1: stop_mult=st.slider("ATR stop multiplier",0.5,4.0,1.5,0.25)
+with c2: reward_r=st.slider("Take-profit in R",0.5,5.0,2.0,0.25)
+with c3: trail_mult=st.slider("Trailing stop ATR (0=off)",0.0,4.0,0.0,0.25)
+try:
+    source=v2_signal if "v2_signal" in locals() else signals(features(df))
+    cut=max(70,int(len(source)*0.7))
+    bt_rows=[]
+    for label,start,end in [("Training window",60,cut),("Holdout window",cut,len(source))]:
+        ts,metrics=backtest_atr(source,start=start,end=end,stop_atr=stop_mult,
+                              target_r=reward_r,trailing_atr=trail_mult,hold_days=hold,fee_bps=fee)
+        bt_rows.append({"window":label,**metrics})
+        if label=="Holdout window" and not ts.empty:
+            st.download_button("Download V3 holdout trades",ts.to_csv(index=False),file_name=f"{selected}_v3_holdout.csv")
+    st.dataframe(pd.DataFrame(bt_rows),use_container_width=True,hide_index=True)
+    st.caption("ATR is fixed at signal close, entry next open, stop-first when daily bar touches both levels. Returns are unleveraged directional underlying proxies, NOT options returns. Changes to settings after seeing holdout results invalidate its untouched-test status.")
+except Exception as exc:
+    st.warning(f"V3 backtest unavailable: {exc}")
 left,right=st.columns([2,1])
 with left:
     st.subheader(f"{selected} technical chart")
