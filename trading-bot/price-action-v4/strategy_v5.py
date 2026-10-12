@@ -52,3 +52,35 @@ def compare_v4_v5(asset:pd.DataFrame,spy:pd.DataFrame,*,hold:int=5,stop_atr:floa
                 deals,stat=backtest_with_gap_filter(x,hold=hold,stop_atr=stop_atr,rr=rr,start=start,end=end)
             rows.append({"strategy":name,"window":label,**stat})
     return pd.DataFrame(rows)
+
+
+def filter_diagnostics(asset:pd.DataFrame,spy:pd.DataFrame,*,max_atr_pct:float=.045,
+                       max_extension_atr:float=1.0,min_trend_pct:float=.008,
+                       max_gap_atr:float=.5)->pd.DataFrame:
+    """Count rejects among *V4 signal bars*, without conflating with V5 trade count.
+
+    Opening-gap information is only known on next session open, not at signal close.
+    This diagnostic is historical analysis, not a live signal predictor.
+    """
+    x=signals(asset,spy)
+    eligible=x["signal"]!=0
+    atr=x["atr"].replace(0,np.nan)
+    checks={
+        "V4 raw signals":pd.Series(True,index=x.index),
+        "ATR / price <= limit":(x["atr"]/x["Close"]<=max_atr_pct),
+        "EMA20 extension <= limit":((x["Close"]-x["ema20"]).abs()/atr<=max_extension_atr),
+        "EMA trend gap >= minimum":((x["ema20"]-x["ema50"]).abs()/x["Close"]>=min_trend_pct),
+        "Volume data valid":(x["Volume"].rolling(20).mean()>0),
+        "Next opening gap <= limit":((x["Open"].shift(-1)-x["Close"]).abs()<=max_gap_atr*x["atr"]),
+    }
+    rows=[]
+    surviving=eligible.copy()
+    for name,ok in checks.items():
+        passed=(eligible&ok.fillna(False)).sum()
+        surviving=surviving & ok.fillna(False)
+        rows.append({"filter":name,"passes_individually":int(passed),
+                     "remaining_after_previous_filters":int(surviving.sum()),
+                     "rejected_at_this_step":int((eligible&~surviving).sum()) if name=="V4 raw signals" else None})
+    for j in range(1,len(rows)):
+        rows[j]["rejected_at_this_step"]=rows[j-1]["remaining_after_previous_filters"]-rows[j]["remaining_after_previous_filters"]
+    return pd.DataFrame(rows)
