@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import yfinance as yf
 from scanner import indicators,signals,structure,pattern,backtest
+from trade_plan import describe
 
 st.set_page_config(page_title="Fundslife Price Action V4",layout="wide",page_icon="📈")
 @st.cache_data(ttl=900)
@@ -61,6 +62,17 @@ with right:
     st.metric("RSI14",f"{last.rsi:.1f}")
     st.metric("ATR14",f"{last.atr:.2f}")
     st.metric("Volume ratio",f"{last.vol_ratio:.2f}×")
+st.subheader("Trade Setup Report")
+plan=describe(x)
+st.write(plan["reason"])
+report_data={
+    "Trend":plan["ticker_trend"],
+    "Pattern Candidate":plan["pattern_candidate"],
+    "Entry Trigger":f'${plan["entry_trigger"]:.2f}' if plan["entry_trigger"] is not None else "WAIT",
+    "Invalidation":f'${plan["invalidation"]:.2f}' if plan["invalidation"] is not None else "N/A",
+}
+st.table(pd.DataFrame(list(report_data.items()),columns=["Measure","Result"]))
+st.caption(plan["disclaimer"])
 st.subheader("Backtest — underlying directional proxy only")
 cut=max(90,int(len(x)*.70))
 results=[]
