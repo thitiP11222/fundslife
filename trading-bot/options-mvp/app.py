@@ -10,6 +10,14 @@ from options_core.risk import option_risk_check
 from options_core.alerts import dispatch_telegram
 from options_core.strategy_v2 import compare
 
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_history(symbol: str):
+    return history(symbol)
+
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_chain(symbol: str, expiry: str):
+    return chain(symbol, expiry)
+
 st.set_page_config(page_title="Fundslife | Options Swing Lab",layout="wide")
 st.title("Fundslife | AI Stock Scanner")
 st.caption("Daily swing signals + options risk gate · Manual execution in Dime · Not investment advice")
@@ -26,7 +34,7 @@ symbols=list(dict.fromkeys(s.strip().upper() for s in tickers.split(",") if s.st
 data={};rows=[]
 for symbol in symbols:
     try:
-        df=history(symbol)
+        df=cached_history(symbol)
         sig=signals(features(df))
         last=sig.iloc[-1]
         rows.append({"symbol":symbol,"price_usd":round(float(last["Close"]),2),
@@ -55,7 +63,7 @@ sig=signals(features(df))
 try:
     benchmark=data.get("SPY")
     if benchmark is None:
-        benchmark=history("SPY")
+        benchmark=cached_history("SPY")
     v2_signal,comparison=compare(df,benchmark,hold_days=hold,fee_bps=fee)
     st.metric("Latest V2 directional signal",str(v2_signal.iloc[-1]["action"]))
     st.dataframe(comparison,use_container_width=True,hide_index=True)
@@ -96,7 +104,7 @@ try:
     expiries=list(yf.Ticker(selected).options)
     if expiries:
         expiry=st.selectbox("Expiration",expiries)
-        calls,puts=chain(selected,expiry)
+        calls,puts=cached_chain(selected,expiry)
         side=st.radio("Type",["CALL","PUT"],horizontal=True)
         oc=calls if side=="CALL" else puts
         cols=["contractSymbol","strike","bid","ask","volume","openInterest","impliedVolatility"]
