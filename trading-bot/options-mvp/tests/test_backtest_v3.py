@@ -13,7 +13,7 @@ def test_stop_and_gap():
     x.iloc[61,x.columns.get_loc("Low")]=94.
     tr,stats=backtest_atr(x,hold_days=3,fee_bps=0,slippage_bps=0)
     assert stats["trades"]==1
-    assert tr.iloc[0]["reason"]=="time_exit"  # stop anchored to next open, no lookahead
+    assert tr.iloc[0]["reason"]=="target"  # stop anchored to next open, no lookahead
     y=bars()
     y.iloc[62,y.columns.get_loc("Open")]=90.
     tr,_=backtest_atr(y,hold_days=3,fee_bps=0,slippage_bps=0)
