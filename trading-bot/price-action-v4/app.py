@@ -7,6 +7,7 @@ import streamlit as st
 import yfinance as yf
 from scanner import indicators,signals,structure,pattern,backtest
 from trade_plan import describe
+from strategy_v5 import filtered_signals,compare_v4_v5
 
 st.set_page_config(page_title="Fundslife Price Action V4",layout="wide",page_icon="📈")
 @st.cache_data(ttl=900)
@@ -73,7 +74,15 @@ report_data={
 }
 st.table(pd.DataFrame(list(report_data.items()),columns=["Measure","Result"]))
 st.caption(plan["disclaimer"])
-st.subheader("Backtest — underlying directional proxy only")
+st.subheader("V5 experimental filter comparison")
+st.caption("Fixed entry filters: max ATR/price 4.5%, max EMA20 extension 1 ATR, min EMA trend gap 0.8%, and maximum opening gap 0.5 ATR. Parameters are hypotheses, NOT optimized from uploaded trade logs.")
+try:
+    comparison=compare_v4_v5(a,m,hold=hold,stop_atr=stop,rr=rr)
+    st.dataframe(comparison,hide_index=True,use_container_width=True)
+    st.warning("Do not select V5 solely because it scores better on a viewed holdout; evaluate on fresh dates and other tickers.")
+except Exception as error:
+    st.warning(f"V5 comparison unavailable: {error}")
+st.subheader("Backtest — V4 underlying directional proxy")
 cut=max(90,int(len(x)*.70))
 results=[]
 for name,start,end in [("Earlier 70%",65,cut),("Final 30%",cut,len(x))]:
