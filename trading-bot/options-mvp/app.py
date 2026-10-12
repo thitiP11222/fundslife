@@ -8,6 +8,7 @@ from src.market import history,chain
 from src.engine import features, signals, backtest_underlying
 from src.risk import option_risk_check
 from src.alerts import dispatch_telegram
+from src.strategy_v2 import compare
 
 st.set_page_config(page_title="Fundslife | Options Swing Lab",layout="wide")
 st.title("Fundslife | AI Stock Scanner")
@@ -46,8 +47,21 @@ st.subheader("Scanner — underlying directional bias only")
 st.dataframe(scan,use_container_width=True,hide_index=True)
 st.caption("CALL_BIAS / PUT_BIAS are technical research flags, not option-contract recommendations.")
 selected=st.selectbox("Inspect stock / ETF",list(data))
+st.subheader("V2 Research: Regime + EMA Pullback")
+st.caption("Compares V1 and V2 on the same asset and chronological split. Underlying-only proxy; not option P&L.")
+
 df=data[selected]
 sig=signals(features(df))
+try:
+    benchmark=data.get("SPY")
+    if benchmark is None:
+        benchmark=history("SPY")
+    v2_signal,comparison=compare(df,benchmark,hold_days=hold,fee_bps=fee)
+    st.metric("Latest V2 directional signal",str(v2_signal.iloc[-1]["action"]))
+    st.dataframe(comparison,use_container_width=True,hide_index=True)
+    st.caption("Out-of-sample = final 30% of daily history. No parameters trained on that holdout; validate across more tickers and periods before use.")
+except Exception as exc:
+    st.warning(f"V2 comparison unavailable: {exc}")
 left,right=st.columns([2,1])
 with left:
     st.subheader(f"{selected} technical chart")
