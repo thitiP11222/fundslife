@@ -4,11 +4,11 @@ import os
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from src.market import history,chain
-from src.engine import features, signals, backtest_underlying
-from src.risk import option_risk_check
-from src.alerts import dispatch_telegram
-from src.strategy_v2 import compare
+from options_core.market import history,chain
+from options_core.engine import features, signals, backtest_underlying
+from options_core.risk import option_risk_check
+from options_core.alerts import dispatch_telegram
+from options_core.strategy_v2 import compare
 
 st.set_page_config(page_title="Fundslife | Options Swing Lab",layout="wide")
 st.title("Fundslife | AI Stock Scanner")
