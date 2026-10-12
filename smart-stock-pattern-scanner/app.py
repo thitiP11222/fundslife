@@ -79,3 +79,45 @@ with tab_data:
     st.dataframe(df[["Close","EMA20","EMA50","RSI14","ATR14","Prior20High","Prior20Low"]].tail(20).round(3),use_container_width=True)
     st.download_button("Download indicators CSV",df.to_csv().encode(),"scanner_indicators.csv","text/csv")
 st.caption(f"Last input candle timestamp: {df.index[-1]} · Yahoo Finance via yfinance. Adjusted price data can differ from TradingView. Pattern score is heuristic, NOT a calibrated probability or win rate.")
+
+# Phase 2: Backtest, historical pattern detections, and chronological validation.
+from src.backtest import signal_history, backtest, walk_forward
+
+st.divider()
+st.header("Historical Strategy Research")
+st.caption("Long-only simulation. Closed-candle signals, next-bar open execution, stops before targets when ambiguous. No live execution.")
+research_fee=st.number_input("Commission (bps per side)",min_value=0.,max_value=100.,value=5.,step=1.)
+research_slip=st.number_input("Slippage (bps per side)",min_value=0.,max_value=100.,value=5.,step=1.)
+train_bars=st.number_input("Initial training/context bars",min_value=65,max_value=max(65,len(raw)-2),value=min(126,max(65,len(raw)-2)),step=1)
+test_bars=st.number_input("Walk-forward evaluation bars",min_value=2,max_value=252,value=63,step=1)
+if st.button("Run historical analysis",type="primary"):
+    with st.spinner("Replaying confirmed bar-by-bar signals..."):
+        history=signal_history(raw,rr=rr)
+        yearly=252 if timeframe=="1d" else 1638
+        eq,trades,metrics=backtest(raw,history,initial=capital,risk_percent=risk_pct,
+                                   fee_bps=research_fee,slippage_bps=research_slip,
+                                   rr=rr,periods_per_year=yearly)
+        folds=walk_forward(raw,history,initial=capital,train_bars=int(train_bars),
+                           test_bars=int(test_bars),risk_percent=risk_pct,
+                           fee_bps=research_fee,slippage_bps=research_slip,
+                           rr=rr,periods_per_year=yearly)
+    tab_back,tab_history,tab_folds=st.tabs(["Backtest","Signal History","Walk-Forward"])
+    with tab_back:
+        cols=st.columns(5)
+        for col,(label,key,suffix) in zip(cols,[("Return","total_return_pct","%"),("Max drawdown","max_drawdown_pct","%"),("Sharpe","sharpe",""),("Win rate","win_rate_pct","%"),("Trades","trades","")]):
+            col.metric(label,f"{metrics[key]}{suffix}")
+        fig_eq=go.Figure()
+        fig_eq.add_trace(go.Scatter(x=eq.index,y=eq.equity,name="Strategy equity"))
+        st.plotly_chart(fig_eq,use_container_width=True)
+        st.dataframe(trades,use_container_width=True)
+        st.download_button("Download trades CSV",trades.to_csv(index=False),f"{ticker}_trades.csv","text/csv")
+    with tab_history:
+        st.write(f"Detected {len(history)} completed-bar pattern signals.")
+        st.dataframe(history,use_container_width=True)
+        st.download_button("Download signal history",history.to_csv(index=False),f"{ticker}_signals.csv","text/csv")
+    with tab_folds:
+        st.caption("Anchored, non-overlapping test windows. Parameters are FIXED (not learned or tuned); train history is causal warmup only. Fold returns are independent, not compounded.")
+        st.dataframe(folds,use_container_width=True)
+        if not folds.empty:
+            st.bar_chart(folds.set_index("test_start")["total_return_pct"])
+        st.download_button("Download walk-forward CSV",folds.to_csv(index=False),f"{ticker}_folds.csv","text/csv")

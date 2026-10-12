@@ -53,13 +53,25 @@ Advanced Charts Library (different from free widget) requires permission and mus
 - Entry/stop/target are scenario levels, not fill promises. Actual orders could have gaps, fees and slippage. Shorts may not be available in fractional share accounts.
 - Indicator prices use auto-adjusted Yahoo data and can differ from raw trading prices.
 - A heuristic score **does not** estimate success probability.
-- No profitability or win-rate claims; no strategy backtest; no brokerage integration or live auto-trading.
+- No profitability claims, brokerage integration or live auto-trading. The historical backtest uses conservative assumptions, not guaranteed fills.
 - Data provider reliability and intraday candle timing require additional production safeguards.
 
 ## One-day roadmap
 1. Install dependencies and run tests.
 2. Inspect NVDA, AAPL and SPY daily data; verify signal levels visually.
-3. Add a replay/backtest with strict next-bar fill logic as a separate follow-up.
+3. Run Phase 2 historical signal replay and backtest with next-bar open execution.
 4. Deploy on Streamlit Community Cloud only after validating data-provider limitations.
 
 **Research/demo only. Not investment advice.**
+
+## Phase 2: Backtest and walk-forward analysis
+
+- Click **Run historical analysis** on the Dashboard. Pattern history is reconstructed from causal prefixes of completed bars.
+- Long-only signals are entered at the **next bar open** with configurable fees/slippage and capped fractional sizing; one position at a time.
+- The stop and target are checked against the current candle range; stop gets priority if both would be touched. Gaps execute at open where appropriate. Positions are liquidated at evaluation-period end.
+- Walk-forward is an **anchored chronological series of nonoverlapping test windows using frozen parameters**, not parameter optimization. Initial bars provide indicator context only. Each fold resets cash rather than compounding.
+- Daily/1-hour Sharpe annualization uses approximations (252 and 1,638 bars per year). Historical adjusted data may be incompatible with true execution and may be incomplete.
+- Result tables and CSV exports: trade log, historical signals, per-fold evaluation metrics.
+- This is an exploratory retrospective simulation subject to selection bias, stock survivorship bias, fees, slippage, and intrabar fill uncertainty.
+
+Run `python -m pytest -q` before deployment.
